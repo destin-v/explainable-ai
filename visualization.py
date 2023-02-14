@@ -126,29 +126,35 @@ def generate_projection(model: nn.Module, model_path: str, dataloader: DataLoade
     )
 
 
-def saliency_map(model: nn.Module, model_path: str, dataloader: DataLoader):
+def saliency_map(model: nn.Module, model_path: str, dataset: DataLoader):
 
     # configuration
-    n_columns = 10
+    n_rows = 10
+    n_cols = 10
 
     # Create embedding visualization
     model.load_state_dict(torch.load(model_path))
 
-    for x, y in dataloader:
+    data_iter = iter(dataset)
+    data_idx = 0
 
-        for ii in range(1, n_columns):
+    for ii in range(0, n_rows, 2):
+        for jj in range(1, n_cols + 1, 1):
+
+            x, y = next(data_iter)
+            data_idx += 1
 
             # calculate gradients w.r.t. input from output
-            x_src = x[ii]
-            x_hat = x[ii]  # create a copy of the tensor
+            x_src = x
+            x_hat = x  # create a copy of the tensor
             x_hat.requires_grad = True  # set gradient tape to True
             y_hat, _ = model(x_hat)  # forward prop
-            target = y[ii]  # target class
+            target = y  # target class
             y_hat[0][target].backward()  # backward prop only on target class!
 
             # generate subplots
-            ax1 = plt.subplot(2, n_columns, ii)
-            ax2 = plt.subplot(2, n_columns, ii + n_columns)
+            ax1 = plt.subplot(n_rows, n_cols, ii * n_cols + jj)
+            ax2 = plt.subplot(n_rows, n_cols, ii * n_cols + jj + n_cols)
 
             # normalize the saliency plot
             img_saliency = x_hat.grad.squeeze()
@@ -170,6 +176,8 @@ def saliency_map(model: nn.Module, model_path: str, dataloader: DataLoader):
             ax1.axis("off")
             ax2.axis("off")
 
+    plt.savefig("./logs/saliency.png", dpi=500)
+
 
 def get_dataloaders():
     # dataset/dataloader
@@ -186,7 +194,7 @@ def get_dataloaders():
         dataset=dataset_val, batch_size=batch_size, shuffle=False
     )
 
-    return dataloader_train, dataloader_val
+    return dataloader_train, dataloader_val, dataset_train, dataset_val
 
 
 def training_iteration(model: nn.Module, loss_fn, optimizer):
@@ -243,7 +251,7 @@ if __name__ == "__main__":
     best_model_path = "./save/best_model.pkl"
 
     # get the dataloaders
-    dataloader_train, dataloader_val = get_dataloaders()
+    dataloader_train, dataloader_val, dataset_train, dataset_val = get_dataloaders()
 
     # tensorboard
     writer = SummaryWriter("./logs")
@@ -281,6 +289,6 @@ if __name__ == "__main__":
 
     # generate projetion
     # generate_projection(model, model_path=best_model_path, dataloader=dataloader_val)
-    saliency_map(model=model, model_path=best_model_path, dataloader=dataloader_val)
+    saliency_map(model=model, model_path=best_model_path, dataset=dataset_val)
 
     writer.close()
