@@ -176,7 +176,7 @@ def saliency_map(model: nn.Module, model_path: str, dataset: DataLoader):
             ax1.axis("off")
             ax2.axis("off")
 
-    plt.savefig("./logs/saliency.png", dpi=500)
+    plt.savefig("./logs/saliency.svg")
 
 
 def get_dataloaders():
@@ -197,7 +197,13 @@ def get_dataloaders():
     return dataloader_train, dataloader_val, dataset_train, dataset_val
 
 
-def training_iteration(model: nn.Module, loss_fn, optimizer):
+def training_iteration(
+    model: nn.Module,
+    loss_fn,
+    optimizer,
+    dataloader_train,
+    step: int,
+):
 
     # training interation
     train_losses = []
@@ -215,29 +221,34 @@ def training_iteration(model: nn.Module, loss_fn, optimizer):
         train_losses.append(loss.item())
 
     avg_train_loss = np.average(train_losses)
-    writer.add_scalar("Loss/train", avg_train_loss, ii)
+    writer.add_scalar("Loss/train", avg_train_loss, step)
 
     return avg_train_loss
 
 
-def eval_iteration():
+def eval_iteration(
+    model,
+    loss_fn,
+    optimizer,
+    dataloader_val,
+    step: int,
+):
 
     # evaluation iteration
     eval_losses = []
     for x, y in tqdm(
         dataloader_val,
         desc="evaluation",
-        colour="teal",
+        colour="cyan",
         position=2,
     ):
         with torch.no_grad():
             y_hat, _ = model(x)
             loss = loss_fn(y_hat, y.long())
-            loss.backward()
             eval_losses.append(loss.item())
 
     avg_eval_loss = np.average(eval_losses)
-    writer.add_scalar("Loss/eval", avg_eval_loss, ii)
+    writer.add_scalar("Loss/eval", avg_eval_loss, step)
 
     return avg_eval_loss
 
@@ -264,28 +275,36 @@ if __name__ == "__main__":
     # save off model
     writer.add_graph(model, torch.rand(1, 1, 28, 28))
 
-    # # perform training on the data
-    # for ii in tqdm(range(0, n_epochs), desc="epochs", colour="green", position=0):
+    # perform training on the data
+    for ii in tqdm(range(0, n_epochs), desc="epochs", colour="green", position=0):
 
-    #     avg_train_loss = training_iteration(
-    #         model=model, loss_fn=loss_fn, optimizer=optimizer
-    #     )
+        avg_train_loss = training_iteration(
+            model=model,
+            loss_fn=loss_fn,
+            optimizer=optimizer,
+            dataloader_train=dataloader_train,
+            step=ii,
+        )
 
-    #     avg_eval_loss = eval_iteration(
-    #         model=model, loss_fn=loss_fn, optimizer=optimizer
-    #     )
+        avg_eval_loss = eval_iteration(
+            model=model,
+            loss_fn=loss_fn,
+            optimizer=optimizer,
+            dataloader_val=dataloader_val,
+            step=ii,
+        )
 
-    #     # printout
-    #     print(
-    #         f"Epoch: {ii}/{n_epochs}  Train Loss: {avg_train_loss:.3f}  Eval Loss: {avg_eval_loss:.3f}"
-    #     )
+        # printout
+        print(
+            f"Epoch: {ii}/{n_epochs}  Train Loss: {avg_train_loss:.3f}  Eval Loss: {avg_eval_loss:.3f}"
+        )
 
-    #     # save off best model
-    #     if avg_eval_loss < min_loss:
-    #         min_loss = avg_eval_loss
-    #         torch.save(model.state_dict(), best_model_path)
-    #         plot_confusion_matrix(model=model, step=ii)  # save off confusion matrix
-    #         print(f"Saving best model with evaluation loss of: {avg_eval_loss}")
+        # save off best model
+        if avg_eval_loss < min_loss:
+            min_loss = avg_eval_loss
+            torch.save(model.state_dict(), best_model_path)
+            plot_confusion_matrix(model=model, step=ii)  # save off confusion matrix
+            print(f"Saving best model with evaluation loss of: {avg_eval_loss:.2f}")
 
     # generate projetion
     # generate_projection(model, model_path=best_model_path, dataloader=dataloader_val)
