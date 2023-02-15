@@ -126,11 +126,21 @@ def generate_projection(model: nn.Module, model_path: str, dataloader: DataLoade
     )
 
 
+def normalize(a):
+    a = np.array(a)
+    ratio = 2 / (np.max(a) - np.min(a))
+    # as you want your data to be between -1 and 1, everything should be scaled to 2,
+    # if your desired min and max are other values, replace 2 with your_max - your_min
+    shift = (np.max(a) + np.min(a)) / 2
+    # now you need to shift the center to the middle, this is not the average of the values.
+    return (a - shift) * ratio
+
+
 def saliency_map(model: nn.Module, model_path: str, dataset: DataLoader):
 
-    # configuration
-    n_rows = 10
-    n_cols = 10
+    # configuration (must be even number!)
+    n_rows = 5
+    n_cols = 6
 
     # Create embedding visualization
     model.load_state_dict(torch.load(model_path))
@@ -138,45 +148,62 @@ def saliency_map(model: nn.Module, model_path: str, dataset: DataLoader):
     data_iter = iter(dataset)
     data_idx = 0
 
-    for ii in range(0, n_rows, 2):
+    for ii in range(0, n_rows, 5):
         for jj in range(1, n_cols + 1, 1):
 
             x, y = next(data_iter)
             data_idx += 1
 
             # calculate gradients w.r.t. input from output
-            x_src = x
-            x_hat = x  # create a copy of the tensor
-            x_hat.requires_grad = True  # set gradient tape to True
-            y_hat, _ = model(x_hat)  # forward prop
-            target = y  # target class
-            y_hat[0][target].backward()  # backward prop only on target class!
+            x_base = torch.zeros((1, 28, 28))
+            x_pred = x
+
+            x_base.requires_grad = True  # set gradient tape to True
+            x_pred.requires_grad = True  # set gradient tape to True
+
+            y_base, _ = model(x_base)  # forward prop baseline
+            y_pred, _ = model(x_pred)  # forward prop
+
+            y_base.sum().backward()  # baseline backpropagation
+            y_pred.sum().backward()  # prediction backpropagation
 
             # generate subplots
-            ax1 = plt.subplot(n_rows, n_cols, ii * n_cols + jj)
-            ax2 = plt.subplot(n_rows, n_cols, ii * n_cols + jj + n_cols)
+            column_idx = ii * n_cols + jj
+            ax1 = plt.subplot(n_rows, n_cols, column_idx + 0 * n_cols)
+            ax2 = plt.subplot(n_rows, n_cols, column_idx + 1 * n_cols)
+            ax3 = plt.subplot(n_rows, n_cols, column_idx + 2 * n_cols)
+            ax4 = plt.subplot(n_rows, n_cols, column_idx + 3 * n_cols)
+            ax5 = plt.subplot(n_rows, n_cols, column_idx + 4 * n_cols)
 
             # normalize the saliency plot
-            img_saliency = x_hat.grad.squeeze()
-            mean, std, _ = (
-                torch.mean(img_saliency),
-                torch.std(img_saliency),
-                torch.var(img_saliency),
-            )
-
-            # create images for plotting
-            img_saliency = (img_saliency - mean) / std
-            img_saliency[img_saliency < 0] = 0  # remove values less than 0
-            img_source = x_src.squeeze().detach().numpy()
+            img_source = x.squeeze().detach().numpy()
+            img_baseline = x_base.grad.squeeze()
+            img_saliency = x_pred.grad.squeeze()
+            img_delta = normalize(img_saliency - img_baseline)
+            img_overlay = img_delta * img_source
 
             # plot images
-            ax1.imshow(img_saliency, cmap=plt.cm.viridis, aspect="auto")
-            ax2.imshow(img_source, cmap=plt.cm.viridis, aspect="auto")
+            ax1.imshow(img_source, cmap=plt.cm.viridis, aspect="auto")
+            ax2.imshow(img_baseline, cmap=plt.cm.viridis, aspect="auto")
+            ax3.imshow(img_saliency, cmap=plt.cm.viridis, aspect="auto")
+            ax4.imshow(img_delta, cmap=plt.cm.viridis, aspect="auto")
+            ax5.imshow(img_overlay, cmap=plt.cm.viridis, aspect="auto")
 
-            ax1.axis("off")
-            ax2.axis("off")
+            if column_idx == 1:
+                ax1.set_ylabel("source")
+                ax2.set_ylabel("baseline")
+                ax3.set_ylabel("saliency")
+                ax4.set_ylabel("delta")
+                ax5.set_ylabel("overlay")
+            else:
+                ax1.axis("off")
+                ax2.axis("off")
+                ax2.axis("off")
+                ax3.axis("off")
+                ax4.axis("off")
+                ax5.axis("off")
 
-    plt.savefig("./logs/saliency.svg")
+    plt.savefig("./logs/saliency.png", dpi=1000)
 
 
 def get_dataloaders():
@@ -275,39 +302,40 @@ if __name__ == "__main__":
     # save off model
     writer.add_graph(model, torch.rand(1, 1, 28, 28))
 
-    # perform training on the data
-    for ii in tqdm(range(0, n_epochs), desc="epochs", colour="green", position=0):
+    # # perform training on the data
+    # for ii in tqdm(range(0, n_epochs), desc="epochs", colour="green", position=0):
 
-        avg_train_loss = training_iteration(
-            model=model,
-            loss_fn=loss_fn,
-            optimizer=optimizer,
-            dataloader_train=dataloader_train,
-            step=ii,
-        )
+    #     avg_train_loss = training_iteration(
+    #         model=model,
+    #         loss_fn=loss_fn,
+    #         optimizer=optimizer,
+    #         dataloader_train=dataloader_train,
+    #         step=ii,
+    #     )
 
-        avg_eval_loss = eval_iteration(
-            model=model,
-            loss_fn=loss_fn,
-            optimizer=optimizer,
-            dataloader_val=dataloader_val,
-            step=ii,
-        )
+    #     avg_eval_loss = eval_iteration(
+    #         model=model,
+    #         loss_fn=loss_fn,
+    #         optimizer=optimizer,
+    #         dataloader_val=dataloader_val,
+    #         step=ii,
+    #     )
 
-        # printout
-        print(
-            f"Epoch: {ii}/{n_epochs}  Train Loss: {avg_train_loss:.3f}  Eval Loss: {avg_eval_loss:.3f}"
-        )
+    #     # printout
+    #     print(
+    #         f"Epoch: {ii}/{n_epochs}  Train Loss: {avg_train_loss:.3f}  Eval Loss: {avg_eval_loss:.3f}"
+    #     )
 
-        # save off best model
-        if avg_eval_loss < min_loss:
-            min_loss = avg_eval_loss
-            torch.save(model.state_dict(), best_model_path)
-            plot_confusion_matrix(model=model, step=ii)  # save off confusion matrix
-            print(f"Saving best model with evaluation loss of: {avg_eval_loss:.2f}")
+    #     # save off best model
+    #     if avg_eval_loss < min_loss:
+    #         min_loss = avg_eval_loss
+    #         torch.save(model.state_dict(), best_model_path)
+    #         plot_confusion_matrix(model=model, step=ii)  # save off confusion matrix
+    #         print(f"Saving best model with evaluation loss of: {avg_eval_loss:.2f}")
 
     # generate projetion
     # generate_projection(model, model_path=best_model_path, dataloader=dataloader_val)
     saliency_map(model=model, model_path=best_model_path, dataset=dataset_val)
+    # generate_canocial(model = model, model_path=model_path)
 
     writer.close()
