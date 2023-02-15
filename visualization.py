@@ -171,7 +171,7 @@ def saliency_map(model: nn.Module, model_path: str, dataset: DataLoader):
             img_source = x.squeeze().detach().numpy()
             img_baseline = torch.abs(x_base.grad.squeeze())
             img_saliency = torch.abs(x_pred.grad.squeeze())
-            img_delta = normalize(img_saliency - img_baseline)
+            img_delta = normalize(x_pred.grad.squeeze() - x_base.grad.squeeze())
             img_overlay = img_delta * img_source
 
             # generate subplots
