@@ -128,12 +128,9 @@ def generate_projection(model: nn.Module, model_path: str, dataloader: DataLoade
 
 def normalize(a):
     a = np.array(a)
-    ratio = 2 / (np.max(a) - np.min(a))
-    # as you want your data to be between -1 and 1, everything should be scaled to 2,
-    # if your desired min and max are other values, replace 2 with your_max - your_min
-    shift = (np.max(a) + np.min(a)) / 2
-    # now you need to shift the center to the middle, this is not the average of the values.
-    return (a - shift) * ratio
+    ans = (a - np.min(a)) / (np.max(a) - np.min(a))
+
+    return ans
 
 
 def saliency_map(model: nn.Module, model_path: str, dataset: DataLoader):
@@ -171,7 +168,7 @@ def saliency_map(model: nn.Module, model_path: str, dataset: DataLoader):
             img_source = x.squeeze().detach().numpy()
             img_baseline = torch.abs(x_base.grad.squeeze())
             img_saliency = torch.abs(x_pred.grad.squeeze())
-            img_delta = normalize(x_pred.grad.squeeze() - x_base.grad.squeeze())
+            img_delta = torch.abs(x_pred.grad.squeeze() - x_base.grad.squeeze())
             img_overlay = img_delta * img_source
 
             # generate subplots
