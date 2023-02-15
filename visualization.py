@@ -167,6 +167,13 @@ def saliency_map(model: nn.Module, model_path: str, dataset: DataLoader):
             y_base.sum().backward()  # baseline backpropagation
             y_pred.sum().backward()  # prediction backpropagation
 
+            # normalize the saliency plot
+            img_source = x.squeeze().detach().numpy()
+            img_baseline = torch.abs(x_base.grad.squeeze())
+            img_saliency = torch.abs(x_pred.grad.squeeze())
+            img_delta = normalize(img_saliency - img_baseline)
+            img_overlay = img_delta * img_source
+
             # generate subplots
             column_idx = ii * n_cols + jj
             ax1 = plt.subplot(n_rows, n_cols, column_idx + 0 * n_cols)
@@ -174,13 +181,6 @@ def saliency_map(model: nn.Module, model_path: str, dataset: DataLoader):
             ax3 = plt.subplot(n_rows, n_cols, column_idx + 2 * n_cols)
             ax4 = plt.subplot(n_rows, n_cols, column_idx + 3 * n_cols)
             ax5 = plt.subplot(n_rows, n_cols, column_idx + 4 * n_cols)
-
-            # normalize the saliency plot
-            img_source = x.squeeze().detach().numpy()
-            img_baseline = x_base.grad.squeeze()
-            img_saliency = x_pred.grad.squeeze()
-            img_delta = normalize(img_saliency - img_baseline)
-            img_overlay = img_delta * img_source
 
             # plot images
             ax1.imshow(img_source, cmap=plt.cm.viridis, aspect="auto")
