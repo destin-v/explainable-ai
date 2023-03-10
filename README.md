@@ -33,6 +33,4 @@ Another way to gain further insights into your model is through t-SNE or PCA vis
 
 > tensorboard --logdir=./logs/
 
-<video width="800" height="600" controls>
-  <source src="examples/tsne.m4v" type="video/mp4">
-</video>
+<img title="Color Map" alt="Alt text" src="examples/tsne.gif">
