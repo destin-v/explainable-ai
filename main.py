@@ -1,6 +1,7 @@
 from torch import nn
-from torch.optim import Adam, Optimizer
-from torch.nn import CrossEntropyLoss
+from torch.optim import Adam, Optimizer, SGD
+from torch.nn import CrossEntropyLoss, MSELoss
+from torch.nn.utils.clip_grad import clip_grad_value_
 from torchvision.datasets import MNIST
 from torchvision import transforms
 from torch.utils.data import DataLoader
@@ -126,10 +127,57 @@ def generate_projection(model: nn.Module, model_path: str, dataloader: DataLoade
     )
 
 
-def normalize(a):
-    a = np.array(a)
-    ans = (a - np.min(a)) / (np.max(a) - np.min(a))
+def generate_canocial(model: nn.Module, model_path: str):
+    input = torch.rand((1, 28, 28))
+    input.requires_grad = True
 
+    loss_fn = MSELoss()
+
+    # Create embedding visualization
+    model.load_state_dict(torch.load(model_path))
+
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # setup optimizer
+    optimizer = SGD([input], lr=0.001)
+
+    matrix = torch.ones((10, 10)) * -1
+    for ii in range(0, matrix.shape[0]):
+        matrix[ii, ii] = 1
+
+    matrix *= 100
+
+    target = torch.Tensor([-10, -10, -10, 10, -10, -10, -10, -10, -10, -10])
+    images = []
+
+    for ii in range(0, 10):
+        losses = []
+        for jj in range(0, 1000):
+
+            pred, _ = model(input)
+            loss = loss_fn(pred, target)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            losses.append(loss.item())
+
+        image = input.squeeze().clone().detach().numpy()
+        images.append(image)
+        print(f"Generative loss: {np.mean(losses)}")
+
+    for ii in range(1, len(images)):
+        ax = plt.subplot(1, len(images), ii)
+        ax.imshow(images[ii])
+
+    print("finish")
+
+
+def normalize(a):
+    ans = (a - a.min()) / (a.max() - a.min())
+    ans = ans.detach().numpy()
+
+    ans = torch.Tensor(ans)
     return ans
 
 
@@ -277,10 +325,47 @@ def eval_iteration(
     return avg_eval_loss
 
 
+def train_model(model, min_loss: float):
+
+    optimizer = Adam(params=model.parameters(), lr=0.0001)
+    loss_fn = CrossEntropyLoss()
+
+    # perform training on the data
+    for ii in tqdm(range(0, n_epochs), desc="epochs", colour="green", position=0):
+
+        avg_train_loss = training_iteration(
+            model=model,
+            loss_fn=loss_fn,
+            optimizer=optimizer,
+            dataloader_train=dataloader_train,
+            step=ii,
+        )
+
+        avg_eval_loss = eval_iteration(
+            model=model,
+            loss_fn=loss_fn,
+            optimizer=optimizer,
+            dataloader_val=dataloader_val,
+            step=ii,
+        )
+
+        # printout
+        print(
+            f"Epoch: {ii}/{n_epochs}  Train Loss: {avg_train_loss:.3f}  Eval Loss: {avg_eval_loss:.3f}"
+        )
+
+        # save off best model
+        if avg_eval_loss < min_loss:
+            min_loss = avg_eval_loss
+            torch.save(model.state_dict(), best_model_path)
+            plot_confusion_matrix(model=model, step=ii)  # save off confusion matrix
+            print(f"Saving best model with evaluation loss of: {avg_eval_loss:.2f}")
+
+
 if __name__ == "__main__":
 
     # configurable params
-    n_epochs = 10
+    n_epochs = 2
     min_loss = np.inf
     batch_size = 16
     best_model_path = "./save/best_model.pkl"
@@ -293,46 +378,16 @@ if __name__ == "__main__":
 
     # hyperparameters
     model = Model()
-    optimizer = Adam(params=model.parameters(), lr=0.0001)
-    loss_fn = CrossEntropyLoss()
 
-    # save off model
+    # save off model architecture
     writer.add_graph(model, torch.rand(1, 1, 28, 28))
 
-    # # perform training on the data
-    # for ii in tqdm(range(0, n_epochs), desc="epochs", colour="green", position=0):
+    # train the model
+    train_model(model, min_loss=min_loss)
 
-    #     avg_train_loss = training_iteration(
-    #         model=model,
-    #         loss_fn=loss_fn,
-    #         optimizer=optimizer,
-    #         dataloader_train=dataloader_train,
-    #         step=ii,
-    #     )
-
-    #     avg_eval_loss = eval_iteration(
-    #         model=model,
-    #         loss_fn=loss_fn,
-    #         optimizer=optimizer,
-    #         dataloader_val=dataloader_val,
-    #         step=ii,
-    #     )
-
-    #     # printout
-    #     print(
-    #         f"Epoch: {ii}/{n_epochs}  Train Loss: {avg_train_loss:.3f}  Eval Loss: {avg_eval_loss:.3f}"
-    #     )
-
-    #     # save off best model
-    #     if avg_eval_loss < min_loss:
-    #         min_loss = avg_eval_loss
-    #         torch.save(model.state_dict(), best_model_path)
-    #         plot_confusion_matrix(model=model, step=ii)  # save off confusion matrix
-    #         print(f"Saving best model with evaluation loss of: {avg_eval_loss:.2f}")
-
-    # generate projetion
-    # generate_projection(model, model_path=best_model_path, dataloader=dataloader_val)
+    # generate results using best model
+    generate_projection(model, model_path=best_model_path, dataloader=dataloader_val)
     saliency_map(model=model, model_path=best_model_path, dataset=dataset_val)
-    # generate_canocial(model = model, model_path=model_path)
+    generate_canocial(model=model, model_path=best_model_path)
 
     writer.close()
